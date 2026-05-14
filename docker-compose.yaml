@@ -1,0 +1,113 @@
+version: '3.8'
+
+services:
+  # ============================================
+  # 1. PostgreSQL — ИСТОЧНИК (откуда тащим данные)
+  # ============================================
+  postgres-source:
+    image: postgres:13
+    container_name: postgres-source
+    environment:
+      POSTGRES_DB: source_db
+      POSTGRES_USER: source_user
+      POSTGRES_PASSWORD: source_pass
+    ports:
+      - "5434:5432"
+    volumes:
+      - ./init_source.sql:/docker-entrypoint-initdb.d/init.sql
+      - postgres_source_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - airflow-net
+
+  # ============================================
+  # 2. PostgreSQL — ХРАНИЛИЩЕ (DWH, куда всё складываем)
+  # ============================================
+  postgres-dwh:
+    image: postgres:13
+    container_name: postgres-dwh
+    environment:
+      POSTGRES_DB: dwh
+      POSTGRES_USER: dwh_user
+      POSTGRES_PASSWORD: dwh_pass
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./init_dwh.sql:/docker-entrypoint-initdb.d/01_init_dwh.sql
+      - postgres_dwh_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - airflow-net
+
+  # ============================================
+  # 3. MinIO — ОБЪЕКТНОЕ ХРАНИЛИЩЕ (файлы CSV)
+  # ============================================
+  minio:
+    image: minio/minio:latest
+    container_name: minio-lab
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+    networks:
+      - airflow-net
+
+  # ============================================
+  # 4. Mock API — ИСТОЧНИК (REST API)
+  # ============================================
+  mock-api:
+    build: ./mock-api
+    container_name: mock-api
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    networks:
+      - airflow-net
+
+  # ============================================
+  # 5. Apache Airflow — ОРКЕСТРАТОР
+  # ============================================
+  airflow:
+    image: apache/airflow:2.7.1
+    container_name: airflow-lab
+    depends_on:
+      - postgres-dwh
+      - postgres-source
+      - minio
+      - mock-api
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres-dwh:5432/airflow
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    env_file:
+      - .env
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+    ports:
+      - "8080:8080"
+    command: >
+      bash -c "
+      sleep 10 &&
+      airflow db init &&
+      airflow users create --username airflow --password airflow --firstname Lab --lastname Student --role Admin --email student@lab.com &&
+      airflow webserver & airflow scheduler
+      "
+    restart: unless-stopped
+    networks:
+      - airflow-net
+
+networks:
+  airflow-net:
+    driver: bridge
+
+volumes:
+  postgres_source_data:
+  postgres_dwh_data:
+  minio_data:

@@ -1,0 +1,6 @@
+product_id,product_name,price,category
+1,Laptop,1200.0,Electronics
+2,Mouse,25.5,Accessories
+3,Keyboard,75.0,Accessories
+4,Monitor,350.0,Electronics
+5,Headphones,89.99,Audio
