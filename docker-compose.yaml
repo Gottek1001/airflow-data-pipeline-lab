@@ -1,40 +1,40 @@
-version: '3.8'
+version: '3.8'  # Версия формата Docker Compose, чтобы Docker понимал как читать файл
 
 services:
   # ============================================
   # 1. PostgreSQL — ИСТОЧНИК (откуда тащим данные)
   # ============================================
-  postgres-source:
-    image: postgres:13
-    container_name: postgres-source
-    environment:
-      POSTGRES_DB: source_db
-      POSTGRES_USER: source_user
-      POSTGRES_PASSWORD: source_pass
-    ports:
-      - "5434:5432"
-    volumes:
-      - ./init_source.sql:/docker-entrypoint-initdb.d/init.sql
-      - postgres_source_data:/var/lib/postgresql/data
-    restart: unless-stopped
-    networks:
-      - airflow-net
+  postgres-source:  # Имя сервиса, по которому к нему обращаются другие контейнеры
+    image: postgres:13  # Какой образ скачать из Docker Hub (официальный PostgreSQL 13 версии)
+    container_name: postgres-source  # Имя конкретного контейнера, чтобы удобно вызывать docker exec
+    environment:  # Переменные окружения, которые PostgreSQL читает при первом запуске
+      POSTGRES_DB: source_db  # Создать базу данных с таким именем
+      POSTGRES_USER: source_user  # Создать пользователя-админа для этой базы
+      POSTGRES_PASSWORD: source_pass  # Пароль для этого пользователя
+    ports:  # Проброс портов с хоста в контейнер
+      - "5434:5432"  # Внутри контейнера PostgreSQL слушает 5432, снаружи доступен на 5434 (чтобы не конфликтовать с локальным PG)
+    volumes:  # Привязка папок и файлов
+      - ./init_source.sql:/docker-entrypoint-initdb.d/init.sql  # При запуске контейнера выполнить этот SQL-скрипт
+      - postgres_source_data:/var/lib/postgresql/data  # Данные базы хранить в Docker-томе, чтобы не пропадали
+    restart: unless-stopped  # Если контейнер упал, перезапустить, если только не остановили вручную
+    networks:  # Подключение к внутренней Docker-сети
+      - airflow-net  # Все сервисы в одной сети, чтобы видели друг друга по именам
 
   # ============================================
   # 2. PostgreSQL — ХРАНИЛИЩЕ (DWH, куда всё складываем)
   # ============================================
-  postgres-dwh:
-    image: postgres:13
-    container_name: postgres-dwh
+  postgres-dwh:  # Целевое хранилище данных
+    image: postgres:13  # Тот же образ PostgreSQL
+    container_name: postgres-dwh  # Уникальное имя контейнера
     environment:
-      POSTGRES_DB: dwh
-      POSTGRES_USER: dwh_user
-      POSTGRES_PASSWORD: dwh_pass
+      POSTGRES_DB: dwh  # База данных для хранилища
+      POSTGRES_USER: dwh_user  # Пользователь для DWH
+      POSTGRES_PASSWORD: dwh_pass  # Пароль
     ports:
-      - "5433:5432"
+      - "5433:5432"  # Снаружи на 5433, чтобы не путать с портом 5434 источника
     volumes:
-      - ./init_dwh.sql:/docker-entrypoint-initdb.d/01_init_dwh.sql
-      - postgres_dwh_data:/var/lib/postgresql/data
+      - ./init_dwh.sql:/docker-entrypoint-initdb.d/01_init_dwh.sql  # Скрипт инициализации таблиц DWH
+      - postgres_dwh_data:/var/lib/postgresql/data  # Том для данных DWH
     restart: unless-stopped
     networks:
       - airflow-net
@@ -42,18 +42,18 @@ services:
   # ============================================
   # 3. MinIO — ОБЪЕКТНОЕ ХРАНИЛИЩЕ (файлы CSV)
   # ============================================
-  minio:
-    image: minio/minio:latest
+  minio:  # S3-совместимое хранилище от MinIO
+    image: minio/minio:latest  # Официальный образ MinIO
     container_name: minio-lab
-    command: server /data --console-address ":9001"
+    command: server /data --console-address ":9001"  # Команда запуска: хранить данные в /data, веб-консоль на 9001
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: minioadmin  # Логин для админки
+      MINIO_ROOT_PASSWORD: minioadmin  # Пароль
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9000:9000"  # Порт для S3 API (программы подключаются сюда)
+      - "9001:9001"  # Порт для веб-консоли (браузер)
     volumes:
-      - minio_data:/data
+      - minio_data:/data  # Данные файлов хранить в томе
     restart: unless-stopped
     networks:
       - airflow-net
@@ -61,11 +61,11 @@ services:
   # ============================================
   # 4. Mock API — ИСТОЧНИК (REST API)
   # ============================================
-  mock-api:
-    build: ./mock-api
+  mock-api:  # Тестовый API, который отдаёт фейковые заказы и продукты
+    build: ./mock-api  # Не скачивать готовый образ, а собрать из Dockerfile в папке mock-api
     container_name: mock-api
     ports:
-      - "8000:8000"
+      - "8000:8000"  # API будет доступен на http://localhost:8000
     restart: unless-stopped
     networks:
       - airflow-net
@@ -73,41 +73,41 @@ services:
   # ============================================
   # 5. Apache Airflow — ОРКЕСТРАТОР
   # ============================================
-  airflow:
-    image: apache/airflow:2.7.1
+  airflow:  # Главный компонент, который управляет задачами
+    image: apache/airflow:2.7.1  # Официальный образ Airflow
     container_name: airflow-lab
-    depends_on:
-      - postgres-dwh
+    depends_on:  # Ждать запуска этих сервисов перед стартом
+      - postgres-dwh  # Без базы данных не может работать
       - postgres-source
       - minio
       - mock-api
-    environment:
-      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres-dwh:5432/airflow
-      - AIRFLOW__CORE__LOAD_EXAMPLES=False
-    env_file:
-      - .env
+    environment:  # Настройки для Airflow
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor  # Как выполнять задачи: в локальных процессах
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres-dwh:5432/airflow  # Строка подключения к его метабазе
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False  # Не грузить примеры DAG, чтобы не мусорить
+    env_file:  # Дополнительные переменные из файла
+      - .env  # Там AIRFLOW_UID и AIRFLOW_GID для прав доступа
     volumes:
-      - ./dags:/opt/airflow/dags
-      - ./logs:/opt/airflow/logs
+      - ./dags:/opt/airflow/dags  # Синхронизация папки с DAG-файлами
+      - ./logs:/opt/airflow/logs  # Логи работы задач сохраняются на диск
     ports:
-      - "8080:8080"
-    command: >
+      - "8080:8080"  # Веб-интерфейс Airflow доступен на localhost:8080
+    command: >  # Команда, которая выполнится при запуске контейнера
       bash -c "
-      sleep 10 &&
-      airflow db init &&
-      airflow users create --username airflow --password airflow --firstname Lab --lastname Student --role Admin --email student@lab.com &&
-      airflow webserver & airflow scheduler
+      sleep 10 &&  # Даем время PostgreSQL подняться
+      airflow db init &&  # Создаем таблицы в метабазе
+      airflow users create --username airflow --password airflow --firstname Lab --lastname Student --role Admin --email student@lab.com &&  # Создаем админа
+      airflow webserver & airflow scheduler  # Запускаем веб-сервер и планировщик
       "
     restart: unless-stopped
     networks:
       - airflow-net
 
 networks:
-  airflow-net:
-    driver: bridge
+  airflow-net:  # Создаём отдельную сеть, чтобы контейнеры видели друг друга по именам
+    driver: bridge  # Стандартный драйвер Docker
 
-volumes:
-  postgres_source_data:
-  postgres_dwh_data:
-  minio_data:
+volumes:  # Именованные тома для сохранения данных между перезапусками
+  postgres_source_data:  # Данные базы-источника
+  postgres_dwh_data:  # Данные хранилища DWH
+  minio_data:  # Файлы в MinIO

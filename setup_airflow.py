@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 Скрипт для автоматической настройки Airflow в Docker-окружении
-Запуск: python setup_airflow.py
 """
 
 import subprocess
