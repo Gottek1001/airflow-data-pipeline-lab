@@ -93,12 +93,7 @@ services:
     ports:
       - "8080:8080"  # Веб-интерфейс Airflow доступен на localhost:8080
     command: >  # Команда, которая выполнится при запуске контейнера
-      bash -c "
-      sleep 10 &&  # Даем время PostgreSQL подняться
-      airflow db init &&  # Создаем таблицы в метабазе
-      airflow users create --username airflow --password airflow --firstname Lab --lastname Student --role Admin --email student@lab.com &&  # Создаем админа
-      airflow webserver & airflow scheduler  # Запускаем веб-сервер и планировщик
-      "
+      bash -c "sleep 10 && airflow db init && airflow users create --username airflow --password airflow --firstname Lab --lastname Student --role Admin --email student@lab.com && airflow webserver & airflow scheduler"
     restart: unless-stopped
     networks:
       - airflow-net
